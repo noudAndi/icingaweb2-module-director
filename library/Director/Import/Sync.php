@@ -76,7 +76,6 @@ class Sync
 
     protected $runStartTime;
 
-    /** @var Filter[] */
     protected $columnFilters = array();
 
     /**
@@ -259,20 +258,9 @@ class Sync
             $key = $source->key_column;
             $this->sourceColumns[$sourceId][$key] = $key;
             $run = $source->fetchLastRun(true);
-
-            $usedColumns = SyncUtils::getRootVariables($this->sourceColumns[$sourceId]);
-
-            $filterColumns = array();
-            foreach ($this->columnFilters as $filter) {
-                foreach ($filter->listFilteredColumns() as $column) {
-                    $filterColumns[$column] = $column;
-                }
-            }
-            foreach (SyncUtils::getRootVariables($filterColumns) as $column) {
-                $usedColumns[$column] = $column;
-            }
-
-            $rows = $run->fetchRows($usedColumns);
+            $rows = $run->fetchRows(
+                SyncUtils::getRootVariables($this->sourceColumns[$sourceId])
+            );
 
             $this->imported[$sourceId] = array();
             foreach ($rows as $row) {
@@ -289,7 +277,7 @@ class Sync
                         );
                     }
                 } else {
-                    if (! property_exists($row, $key)) {
+                   if (! property_exists($row, $key)) {
                         throw new IcingaException(
                             'There is no key column "%s" in this row from "%s": %s',
                             $key,
@@ -435,7 +423,7 @@ class Sync
                     }
                 }
                 if (! array_key_exists($key, $newObjects)) {
-                    $newObjects[$key] = IcingaObject::createByType(
+                   $newObjects[$key] = IcingaObject::createByType(
                         $this->rule->object_type,
                         array(),
                         $this->db
@@ -505,6 +493,12 @@ class Sync
         $newObjects = $this->prepareNewObjects();
 
         foreach ($newObjects as $key => $object) {
+
+
+            // BUG::: Sometimes is the this->objects not a key value array and this condition has no effect. 
+            // See the function: loadExistingObjects, this function is calling the other function with the name loadAllByType, that returns the existing objects by type from the database
+            // loadAllByType is returning for the IcingaService object type a array without key value paar
+            // In this bug case would insert a duplicate object in the database
             if (array_key_exists($key, $this->objects)) {
                 switch ($this->rule->update_policy) {
                     case 'override':
@@ -521,7 +515,26 @@ class Sync
                         // policy 'ignore', no action
                 }
             } else {
-                $this->objects[$key] = $object;
+            
+               //Original
+               //$this->objects[$key] = $object;
+                        
+                
+               //Check if this->objects is not a key value array and the current object is as a object in the array.
+               if($this->objects != null && is_array($this->objects)) {
+                    $array_filter_results = array_filter($this->objects, function($obj) use($key) {
+                            //here we need the object_name as unique column, but it can be maybe a source->key_column
+                            return ($obj->object_name == $key);
+                    });
+
+                    if($array_filter_results != null && count($array_filter_results) > 0) {
+                       continue;
+                    } else {
+                            $this->objects[$key] = $object;
+                    }
+                } else {
+                     $this->objects[$key] = $object;
+               }
             }
         }
 

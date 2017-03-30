@@ -76,6 +76,7 @@ class Sync
 
     protected $runStartTime;
 
+    /** @var Filter[] */
     protected $columnFilters = array();
 
     /**
@@ -258,9 +259,20 @@ class Sync
             $key = $source->key_column;
             $this->sourceColumns[$sourceId][$key] = $key;
             $run = $source->fetchLastRun(true);
-            $rows = $run->fetchRows(
-                SyncUtils::getRootVariables($this->sourceColumns[$sourceId])
-            );
+
+            $usedColumns = SyncUtils::getRootVariables($this->sourceColumns[$sourceId]);
+
+            $filterColumns = array();
+            foreach ($this->columnFilters as $filter) {
+                foreach ($filter->listFilteredColumns() as $column) {
+                    $filterColumns[$column] = $column;
+                }
+            }
+            foreach (SyncUtils::getRootVariables($filterColumns) as $column) {
+                $usedColumns[$column] = $column;
+            }
+
+            $rows = $run->fetchRows($usedColumns);
 
             $this->imported[$sourceId] = array();
             foreach ($rows as $row) {
@@ -277,7 +289,7 @@ class Sync
                         );
                     }
                 } else {
-                   if (! property_exists($row, $key)) {
+                    if (! property_exists($row, $key)) {
                         throw new IcingaException(
                             'There is no key column "%s" in this row from "%s": %s',
                             $key,
